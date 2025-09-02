@@ -1,0 +1,14 @@
+{
+  "name": "Virtual Try-On Glasses",
+  "short_name": "Try-On Glasses",
+  "description": "AI-powered virtual try-on technology for eyewear shopping",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#2563eb",
+  "orientation": "portrait-primary",
+  "icons": [],
+  "categories": ["shopping", "business", "productivity"],
+  "lang": "en",
+  "dir": "ltr"
+}
