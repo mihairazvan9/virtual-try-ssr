@@ -16,17 +16,13 @@
       <!-- Footer -->
       <LandingFooter />
     </div>
+    
   </div>
 </template>
 
 <script setup>
 // Components will be auto-imported by Nuxt
-import { computed } from 'vue'
-// import HeroSection from './components/landing/HeroSection.vue'
-// import FeaturesSection from './components/landing/FeaturesSection.vue'
-// import DemoSection from './components/landing/DemoSection.vue'
-// import CTASection from './components/landing/CTASection.vue'
-// import LandingFooter from './components/landing/LandingFooter.vue'
+import { computed, onMounted } from 'vue'
 
 // Computed
 const currentYear = computed(() => new Date().getFullYear())
@@ -45,6 +41,23 @@ const contactUs = () => {
   // You can add your contact logic here
   // For example, open a contact form, navigate to contact page, etc.
 }
+
+// Initialize SpeedInsights and Analytics on client-side
+onMounted(() => {
+  if (process.client) {
+    // Load SpeedInsights
+    import('@vercel/speed-insights').then(({ injectSpeedInsights }) => {
+      // console.log('SpeedInsights loaded in app.vue')
+      injectSpeedInsights()
+    }).catch(console.error)
+    
+    // Load Analytics
+    import('@vercel/analytics').then(({ inject }) => {
+      // console.log('Analytics loaded in app.vue')
+      inject()
+    }).catch(console.error)
+  }
+})
 </script>
 
 <style lang="scss">

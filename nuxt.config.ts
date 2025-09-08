@@ -30,7 +30,7 @@ export default defineNuxtConfig({
         { property: 'og:title', content: 'Virtual Try-On Glasses - AI-Powered Eyewear Shopping' },
         { property: 'og:description', content: 'Revolutionary AI-powered virtual try-on technology for glasses. Let customers try on eyewear instantly using their camera.' },
         { property: 'og:image', content: '/og-image.jpg' },
-        { property: 'og:url', content: 'https://virtual-try-on-glasses.com' },
+        { property: 'og:url', content: 'https://www.makemetryon.com' },
         { property: 'og:site_name', content: 'Virtual Try-On Glasses' },
         { property: 'og:locale', content: 'en_US' },
         
@@ -58,9 +58,30 @@ export default defineNuxtConfig({
         { rel: 'preconnect', href: 'https://fonts.gstatic.com', crossorigin: '' },
         { rel: 'dns-prefetch', href: 'https://www.googletagmanager.com' },
         { rel: 'dns-prefetch', href: 'https://www.google-analytics.com' },
-        { rel: 'canonical', href: 'https://virtual-try-on-glasses.com' }
+        { rel: 'canonical', href: 'https://www.makemetryon.com' }
       ],
       script: [
+        // Google Tag Manager
+        {
+          innerHTML: `(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
+})(window,document,'script','dataLayer','${process.env.GOOGLE_TAG_MANAGER_ID || 'GTM-P5F97NMJ'}');`
+        },
+        // Google Analytics (gtag.js)
+        {
+          src: `https://www.googletagmanager.com/gtag/js?id=${process.env.GOOGLE_ANALYTICS_ID || 'G-Q69N7FSGZ1'}`,
+          async: true
+        },
+        {
+          innerHTML: `
+            window.dataLayer = window.dataLayer || [];
+            function gtag(){dataLayer.push(arguments);}
+            gtag('js', new Date());
+            gtag('config', '${process.env.GOOGLE_ANALYTICS_ID || 'G-Q69N7FSGZ1'}');
+          `
+        },
         {
           type: 'application/ld+json',
           innerHTML: JSON.stringify({
@@ -68,7 +89,7 @@ export default defineNuxtConfig({
             "@type": "SoftwareApplication",
             "name": "Virtual Try-On Glasses",
             "description": "AI-powered virtual try-on technology for eyewear shopping",
-            "url": "https://virtual-try-on-glasses.com",
+            "url": "https://www.makemetryon.com",
             "applicationCategory": "BusinessApplication",
             "operatingSystem": "Web Browser",
             "offers": {
@@ -95,16 +116,16 @@ export default defineNuxtConfig({
             "@type": "WebSite",
             "name": "Virtual Try-On Glasses",
             "description": "Revolutionary AI-powered virtual try-on technology for eyewear shopping",
-            "url": "https://virtual-try-on-glasses.com",
+            "url": "https://www.makemetryon.com",
             "potentialAction": {
               "@type": "SearchAction",
-              "target": "https://virtual-try-on-glasses.com/search?q={search_term_string}",
+              "target": "https://www.makemetryon.com/search?q={search_term_string}",
               "query-input": "required name=search_term_string"
             },
             "publisher": {
               "@type": "Organization",
               "name": "Virtual Try-On Glasses",
-              "url": "https://virtual-try-on-glasses.com"
+              "url": "https://www.makemetryon.com"
             }
           })
         },
@@ -114,8 +135,8 @@ export default defineNuxtConfig({
             "@context": "https://schema.org",
             "@type": "Organization",
             "name": "Virtual Try-On Glasses",
-            "url": "https://virtual-try-on-glasses.com",
-            "logo": "https://virtual-try-on-glasses.com/logo.png",
+            "url": "https://www.makemetryon.com",
+            "logo": "https://www.makemetryon.com/logo.png",
             "description": "Leading provider of AI-powered virtual try-on technology for eyewear e-commerce",
             "foundingDate": "2025",
             "sameAs": [
@@ -128,23 +149,6 @@ export default defineNuxtConfig({
               "availableLanguage": "English"
             }
           })
-        },
-        // Google Analytics
-        {
-          src: 'https://www.googletagmanager.com/gtag/js?id=' + (process.env.GOOGLE_ANALYTICS_ID || ''),
-          async: true
-        },
-        {
-          innerHTML: `
-            window.dataLayer = window.dataLayer || [];
-            function gtag(){dataLayer.push(arguments);}
-            gtag('js', new Date());
-            gtag('config', '${process.env.GOOGLE_ANALYTICS_ID || ''}', {
-              page_title: document.title,
-              page_location: window.location.href,
-              anonymize_ip: true
-            });
-          `
         }
       ]
     }
@@ -187,8 +191,9 @@ export default defineNuxtConfig({
     public: {
       siteUrl: 'https://makemetryon.com',
       siteName: 'Virtual Try-On Glasses',
-      googleAnalyticsId: process.env.GOOGLE_ANALYTICS_ID || '',
-      googleTagManagerId: process.env.GOOGLE_TAG_MANAGER_ID || '',
+      googleAnalyticsId: process.env.GOOGLE_ANALYTICS_ID || 'G-Q69N7FSGZ1',
+      googleTagManagerId: process.env.GOOGLE_TAG_MANAGER_ID || 'GTM-P5F97NMJ',
+      // apiUrl: process.env.API_URL || 'http://localhost:5000/api'
       apiUrl: process.env.API_URL || 'https://api.makemetryon.com/api'
     }
   },
