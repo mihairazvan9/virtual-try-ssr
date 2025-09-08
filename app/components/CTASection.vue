@@ -8,28 +8,42 @@
       into your online eyewear store. Boost customer confidence, reduce returns, and 
       increase conversion rates with cutting-edge AR technology.
     </p>
-    <button 
-      @click="contactUs"
-      class="contact-us-btn btn"
-      aria-label="Contact us to integrate virtual try-on technology"
-    >
-      Get Started Today
-    </button>
+    <form @submit.prevent="subscribe" class="subscribe-form">
+      <div class="email-input-group">
+        <input
+          v-model="subscriptionStore.email"
+          @input="subscriptionStore.setEmail($event.target.value)"
+          type="email"
+          placeholder="Enter your email address"
+          class="email-input"
+          required
+          aria-label="Email address for subscription"
+        />
+        <button 
+          type="submit"
+          class="subscribe-btn btn"
+          :disabled="!subscriptionStore.email || subscriptionStore.isSubscribing"
+          aria-label="Subscribe to updates"
+        >
+          {{ subscriptionStore.isSubscribing ? 'Subscribing...' : 'Subscribe' }}
+        </button>
+      </div>
+      <p v-if="subscriptionStore.message" class="subscription-message" :class="{ 'success': subscriptionStore.success, 'error': !subscriptionStore.success }">
+        {{ subscriptionStore.message }}
+      </p>
+    </form>
   </section>
 </template>
 
 <script setup>
-// Props
-const props = defineProps({
-  onContactUs: {
-    type: Function,
-    default: () => {}
-  }
-})
+import { useSubscriptionStore } from '../stores/subscription.js'
+
+// Pinia store
+const subscriptionStore = useSubscriptionStore()
 
 // Methods
-const contactUs = () => {
-  props.onContactUs()
+async function subscribe () {
+  await subscriptionStore.subscribe()
 }
 </script>
 
@@ -60,22 +74,85 @@ const contactUs = () => {
   margin-right: auto;
 }
 
-.contact-us-btn {
+.subscribe-form {
+  max-width: 28rem;
+  margin: 0 auto;
+}
+
+.email-input-group {
+  display: flex;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.email-input {
+  flex: 1;
+  padding: 16px 20px;
+  font-size: 1rem;
+  border: 2px solid #e5e7eb;
+  border-radius: 1rem;
+  outline: none;
+  transition: border-color 0.2s ease;
+}
+
+.email-input:focus {
+  border-color: #0F172A;
+}
+
+.email-input::placeholder {
+  color: #9ca3af;
+}
+
+.subscribe-btn {
   background-color: #0F172A;
   color: #F8FAFC;
   font-weight: 600;
   border-radius: 1rem;
   padding: 16px 32px;
-  font-size: 1.125rem;
+  font-size: 1rem;
   border: none;
   cursor: pointer;
-  transition: background-color 0.2s ease;
-  display: inline-block;
-  text-decoration: none;
-  line-height: 1;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+  min-width: 120px;
 }
 
-.contact-us-btn:hover {
+.subscribe-btn:hover:not(:disabled) {
   background-color: #30343f;
+}
+
+.subscribe-btn:disabled {
+  background-color: #9ca3af;
+  cursor: not-allowed;
+}
+
+.subscription-message {
+  font-size: 0.875rem;
+  margin-top: 0.5rem;
+  padding: 0.75rem 1rem;
+  border-radius: 0.5rem;
+  text-align: center;
+}
+
+.subscription-message.success {
+  background-color: #dcfce7;
+  color: #166534;
+  border: 1px solid #bbf7d0;
+}
+
+.subscription-message.error {
+  background-color: #fef2f2;
+  color: #dc2626;
+  border: 1px solid #fecaca;
+}
+
+@media (max-width: 640px) {
+  .email-input-group {
+    flex-direction: column;
+  }
+  
+  .subscribe-btn {
+    min-width: auto;
+  }
 }
 </style>

@@ -3,6 +3,9 @@ export default defineNuxtConfig({
   compatibilityDate: '2025-07-15',
   devtools: { enabled: false },
   
+  // Pinia state management
+  modules: ['@pinia/nuxt'],
+  
   // SEO Configuration
   app: {
     head: {
@@ -182,10 +185,11 @@ export default defineNuxtConfig({
   // Runtime config for environment variables
   runtimeConfig: {
     public: {
-      siteUrl: 'https://virtual-try-on-glasses.com',
+      siteUrl: 'https://makemetryon.com',
       siteName: 'Virtual Try-On Glasses',
       googleAnalyticsId: process.env.GOOGLE_ANALYTICS_ID || '',
-      googleTagManagerId: process.env.GOOGLE_TAG_MANAGER_ID || ''
+      googleTagManagerId: process.env.GOOGLE_TAG_MANAGER_ID || '',
+      apiUrl: process.env.API_URL || 'https://api.makemetryon.com/api'
     }
   },
   
