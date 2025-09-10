@@ -13,7 +13,7 @@ let settings_glasses = {
   show: false,
   mobileMultiplier: 1, // Increased for better mobile scaling
   baseScaleMultiplier: 1, // Increased for better mobile scaling
-  manualRotationY: 0,
+  manualRotationY: 3.14,
   // Local offsets of the glasses relative to the head anchor (in orthographic world units)
   offsetX: 0,
   offsetY: 4,

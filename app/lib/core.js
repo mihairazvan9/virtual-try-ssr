@@ -1,9 +1,11 @@
 import * as THREE from 'three/webgpu'
-import { model, hdr } from '@/lib/utils/loader'
+import {  hdr } from '@/lib/utils/loader'
 import * as Helpers from '@/lib/utils/helpers'
 import { add_web_camera, stop_web_camera } from '@/lib/utils/ai/connect_camera'
 import * as Detect from '@/lib/utils/ai/detections'
 import { settings_glasses, settings } from '@/lib/settings'
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader'
+import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader'
 
 /*
  * IMPROVED MVP SYSTEM:
@@ -24,12 +26,18 @@ let lastTs = -1
 let sunglassesModel = null
 let anchor = null
 let fitted = false
+let model = null
+// Model switching
+let currentModelId = 1
+let modelCache = new Map() // Cache loaded models
 
 // === NEW: globals for model sizing ===
 let modelBBoxWidth = 0;  // width (X) of glasses model in its local units at scale 1
 
 // Initialize settings GUI
-settings_glasses.show ? settings() : null
+if (process.client) {
+  settings_glasses.show ? settings() : null
+}
 
 // Generic smoothing helper that can handle vectors, quaternions, and scalars
 class SmoothedValue {
@@ -110,7 +118,7 @@ const tmpScale = new THREE.Vector3();
 const correction = new THREE.Quaternion()
   .multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(0, Math.PI, 0))); // flip Yaw 180°
 
-function init(canvas_id) {
+async function init(canvas_id) {
   canvas = document.getElementById(canvas_id)
   
   scene = new THREE.Scene()
@@ -132,7 +140,7 @@ function init(canvas_id) {
   scene.environment = hdr
   
   // add_lights()
-  add_model()
+  await add_model()
   
   window.addEventListener('resize', () => on_window_resize(), false)
   
@@ -200,29 +208,107 @@ function is_loaded () {
   makeResetFunctionGlobal()
 }
 
-function add_model () {
-  console.log('Adding sunglasses model to scene:', model)
+// Function to load a specific glasses model
+async function loadGlassesModel(modelId) {
+  // Check if model is already cached
+  if (modelCache.has(modelId)) {
+    return modelCache.get(modelId)
+  }
+  
+  try {
+    const dracoLoader = new DRACOLoader()
+    dracoLoader.setDecoderPath('/draco/')
+    dracoLoader.setDecoderConfig({ type: 'js' })
+    
+    const loader = new GLTFLoader()
+    loader.setDRACOLoader(dracoLoader)
+    
+    // Use the public directory path since assets might not be accessible directly
+    const modelPath = `/models/glasses${modelId}.glb`
+    
+    console.log('Loading glasses model:', modelPath)
+    
+    return new Promise((resolve, reject) => {
+      loader.load(modelPath, (gltfScene) => {
+        const model = gltfScene.scene
+        modelCache.set(modelId, model)
+        resolve(model)
+      }, undefined, (error) => {
+        console.error('Error loading glasses model:', error)
+        reject(error)
+      })
+    })
+  } catch (error) {
+    console.error('Error loading glasses model:', error)
+    throw error
+  }
+}
+
+// Function to switch glasses model
+async function switchGlassesModel(modelId) {
+  if (modelId === currentModelId) return
+  
+  try {
+    console.log(`Switching to glasses model ${modelId}`)
+    
+    // Remove current model from anchor
+    if (sunglassesModel && anchor) {
+      anchor.remove(sunglassesModel)
+    }
+    
+    // Load new model
+    const newModel = await loadGlassesModel(modelId)
+    
+    if (newModel && anchor) {
+      // Add new model to anchor
+      sunglassesModel = newModel
+      anchor.add(sunglassesModel)
+      sunglassesModel.visible = true
+      sunglassesModel.position.set(0, 0, 0)
+      sunglassesModel.rotation.set(0, 0, 0)
+      sunglassesModel.scale.setScalar(1.0)
+      
+      // Update model width for scaling calculations
+      // modelBBoxWidth = Math.max(1e-6, getModelWidth(sunglassesModel))
+      console.log('New glasses model width (units):', modelBBoxWidth)
+      
+      currentModelId = modelId
+      console.log(`Successfully switched to glasses model ${modelId}`)
+    }
+  } catch (error) {
+    console.error('Error switching glasses model:', error)
+  }
+}
+
+async function add_model () {
+  console.log('Loading initial sunglasses model...')
   
   // Create anchor for head tracking
   anchor = new THREE.Object3D()
   scene.add(anchor)
   
-  // Add sunglasses as child of anchor
-  sunglassesModel = model
-  if (sunglassesModel) {
-    anchor.add(sunglassesModel)
-    sunglassesModel.visible = true
-    sunglassesModel.position.set(0, 0.02, 0.02) // forward a bit, up a bit
-    sunglassesModel.rotation.set(0, 0, 0)
-    sunglassesModel.scale.setScalar(1.0)
+  try {
+    // Load the first model using our loadGlassesModel function
+    const initialModel = await loadGlassesModel(1)
     
-    // === NEW: cache the model width at scale=1 ===
-    modelBBoxWidth = Math.max(1e-6, getModelWidth(sunglassesModel))
-    console.log('Glasses model width (units):', modelBBoxWidth)
-    
-    console.log('Sunglasses model added and anchored')
-  } else {
-    console.error('Sunglasses model is null!')
+    if (initialModel) {
+      sunglassesModel = initialModel
+      anchor.add(sunglassesModel)
+      sunglassesModel.visible = true
+      sunglassesModel.position.set(0, 0, 0)
+      sunglassesModel.rotation.set(0, 0, 0)
+      sunglassesModel.scale.setScalar(1.0)
+      
+      // Cache the model width at scale=1
+      modelBBoxWidth = Math.max(1e-6, getModelWidth(sunglassesModel))
+      console.log('Glasses model width (units):', modelBBoxWidth)
+      
+      console.log('Initial sunglasses model loaded and anchored')
+    } else {
+      console.error('Failed to load initial sunglasses model!')
+    }
+  } catch (error) {
+    console.error('Error loading initial model:', error)
   }
 }
 
@@ -322,7 +408,7 @@ function add_lights () {
 
 function makeResetFunctionGlobal() {
   if (typeof window !== 'undefined') {
-    console.log('Reset function made globally accessible')
+    window.switchGlassesModel = switchGlassesModel
   }
 }
 
@@ -494,5 +580,6 @@ export {
   canvas,
   START_RAF, 
   STOP_RAF,
-  makeResetFunctionGlobal
+  makeResetFunctionGlobal,
+  switchGlassesModel
 }
