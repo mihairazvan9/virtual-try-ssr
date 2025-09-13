@@ -35,8 +35,6 @@ let lastMemoryCleanup = 0;
 // Glasses
 let sunglassesModel = null;
 let anchor = null;
-let currentModelId = 1;
-const modelCache = new Map();
 let modelBBoxWidth = 0;
 
 // GUI
@@ -92,7 +90,6 @@ function cleanupMemory() {
   vector3Pool.length = 0;
   quaternionPool.length = 0;
   matrix4Pool.length = 0;
-  if (modelCache.size > 10) modelCache.clear();
 }
 
 // === Global Constants ===
@@ -158,14 +155,12 @@ function isLoaded() {
 }
 
 // === Model loading ===
-async function loadGlassesModel(id) {
-  if (modelCache.has(id)) return modelCache.get(id);
-
+async function loadGlassesModel() {
   const draco = new DRACOLoader().setDecoderPath('/draco/').setDecoderConfig({ type: 'js' });
   const loader = new GLTFLoader().setDRACOLoader(draco);
 
   return new Promise((resolve, reject) => {
-    loader.load(`/models/glasses${id}.glb`, (gltf) => {
+    loader.load('/models/glasses1.glb', (gltf) => {
       const model = gltf.scene;
       model.traverse((c) => {
         if (c.isMesh) {
@@ -174,7 +169,6 @@ async function loadGlassesModel(id) {
           c.geometry?.computeBoundingSphere();
         }
       });
-      modelCache.set(id, model);
       resolve(model);
     }, undefined, reject);
   });
@@ -185,13 +179,12 @@ async function addModel() {
   scene.add(anchor);
 
   try {
-    const model = await loadGlassesModel(1);
+    const model = await loadGlassesModel();
     if (!model) throw new Error('Model failed to load');
     sunglassesModel = model;
     anchor.add(model);
     modelBBoxWidth = getModelWidth(model);
 
-    setTimeout(() => [2, 3, 4, 5].forEach(loadGlassesModel), 2000);
   } catch (e) { console.error(e); }
 }
 
@@ -297,12 +290,12 @@ async function __RAF() {
 
   try {
     if (mode === 'VIDEO') {
-      ctx.save();
-      ctx.clearRect(0, 0, canvasVideo.width, canvasVideo.height);
-      ctx.translate(canvasVideo.width, 0);
-      ctx.scale(-1, 1);
-      ctx.drawImage(video, 0, 0, canvasVideo.width, canvasVideo.height);
-      ctx.restore();
+      // ctx.save();
+      // ctx.clearRect(0, 0, canvasVideo.width, canvasVideo.height);
+      // ctx.translate(canvasVideo.width, 0);
+      // ctx.scale(-1, 1);
+      // ctx.drawImage(video, 0, 0, canvasVideo.width, canvasVideo.height);
+      // ctx.restore();
 
       if (faceLandmarker && !isDetectionRunning) {
         const dCanvas = createDetectionCanvas();
@@ -380,21 +373,10 @@ function isMobile() {
 
 function makeResetFunctionGlobal() {
   if (typeof window !== 'undefined') {
-    window.switchGlassesModel = switchGlassesModel;
     window.cleanupMemory = cleanupMemory;
   }
 }
 
-async function switchGlassesModel(id) {
-  if (id === currentModelId) return;
-  if (sunglassesModel && anchor) anchor.remove(sunglassesModel);
-  const newModel = await loadGlassesModel(id);
-  if (newModel && anchor) {
-    sunglassesModel = newModel;
-    anchor.add(newModel);
-    currentModelId = id;
-  }
-}
 
 function START_RAF() { isRunning = true; }
 function STOP_RAF() { stop_web_camera(); isRunning = false; cleanupMemory(); }
@@ -402,5 +384,5 @@ function STOP_RAF() { stop_web_camera(); isRunning = false; cleanupMemory(); }
 export {
   init, scene, camera, renderer, canvas,
   START_RAF, STOP_RAF,
-  makeResetFunctionGlobal, switchGlassesModel
+  makeResetFunctionGlobal
 };
