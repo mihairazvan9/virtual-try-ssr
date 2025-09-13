@@ -52,7 +52,7 @@ function init_renderer ({ canvas }) {
   const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
   const renderer = new THREE.WebGPURenderer({
     canvas,
-    antialias: !isMobile, // disable MSAA on mobile for perf
+    antialias: true, //!isMobile, // disable MSAA on mobile for perf
     alpha: true
   })
 

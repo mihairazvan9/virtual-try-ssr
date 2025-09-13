@@ -11,31 +11,17 @@ const SMOOTHING = {
 // Settings
 let settings_glasses = {
   show: false,
-  mobileMultiplier: 1, // Increased for better mobile scaling
-  baseScaleMultiplier: 1, // Increased for better mobile scaling
+  mobileMultiplier: 1,
+  baseScaleMultiplier: 1,
   manualRotationY: 3.14,
-  // Local offsets of the glasses relative to the head anchor (in orthographic world units)
+  // Local offsets of the glasses relative to the head anchor
   offsetX: 0,
-  offsetY: 4,
+  offsetY: 0,
   offsetZ: 46,
-  depthOffset: 86, // Depth offset for glasses positioning
-  // Head rotation compensation settings
-  rotationCompensationEnabled: true, // Enable/disable rotation compensation
-  rotationCompensationStrength: 0.15, // How much to compensate for rotation (0.0 to 2.0) - gentle since cos() already helps
-  rotationCompensationThreshold: 0.15, // Minimum rotation angle to start compensation (~9°)
-  // === NEW: Improved IPD-based scaling settings ===
-  frameToIpdRatio: 1.6, // How many "IPDs" wide the frame should appear (1.8-2.2 typical)
-  // === PERFORMANCE: Detection optimization settings ===
-  detectionResolutionScale: 0.5, // Scale factor for detection canvas (0.5 = 50% resolution)
-  // === MEMORY: Memory optimization settings ===
-  maxModelCacheSize: 10, // Maximum number of models to cache
-  // === CAMERA: Camera optimization settings ===
-  cameraResolutionScale: 1.0, // Scale factor for camera resolution (0.5 = 50% resolution)
-  cameraFrameRate: 30, // Target camera frame rate
-  // === MOBILE: Mobile-specific optimization settings ===
-  mobileResolutionScale: 0.75, // Resolution scale for mobile devices
-  enableMobileOptimizations: true, // Enable mobile-specific optimizations
-  // Fine-tuning for different measurement methods
+  depthOffset: 86,
+  // IPD-based scaling settings
+  frameToIpdRatio: 1.6,
+  // Smoothing settings
   smoothing: { ...SMOOTHING }
 }
 
@@ -52,7 +38,6 @@ function settings () {
   sunglassesFolder.add(settings_glasses, 'offsetZ', -100, 100, 1).name('Offset Z')
   sunglassesFolder.add(settings_glasses, 'depthOffset', -100, 100, 1).name('Depth Offset')
   
-  // Face-based scaling settings
   let smoothingFolder = gui.addFolder('Smoothing')
   smoothingFolder.add(settings_glasses.smoothing, 'pos', 0.1, 0.9, 0.05).name('Position Smoothing')
   smoothingFolder.add(settings_glasses.smoothing, 'rot', 0.1, 0.9, 0.05).name('Rotation Smoothing')
@@ -61,28 +46,9 @@ function settings () {
   let manualFolder = gui.addFolder('Manual Override')
   manualFolder.add(settings_glasses, 'manualRotationY', -Math.PI, Math.PI, 0.1).name('Manual Y Rotation')
   
-  // Performance optimization settings
-  let performanceFolder = gui.addFolder('Performance Optimization')
-  performanceFolder.add(settings_glasses, 'detectionResolutionScale', 0.25, 1.0, 0.05).name('Detection Resolution Scale')
-  
-  // Memory optimization settings
-  let memoryFolder = gui.addFolder('Memory Optimization')
-  memoryFolder.add(settings_glasses, 'maxModelCacheSize', 5, 20, 1).name('Max Model Cache Size')
-  
-  // Camera optimization settings
-  let cameraFolder = gui.addFolder('Camera Optimization')
-  cameraFolder.add(settings_glasses, 'cameraResolutionScale', 0.25, 1.0, 0.05).name('Camera Resolution Scale')
-  cameraFolder.add(settings_glasses, 'cameraFrameRate', 15, 60, 5).name('Camera Frame Rate')
-  
-  // Mobile optimization settings
-  let mobileFolder = gui.addFolder('Mobile Optimization')
-  mobileFolder.add(settings_glasses, 'enableMobileOptimizations').name('Enable Mobile Optimizations')
-  mobileFolder.add(settings_glasses, 'mobileResolutionScale', 0.25, 1.0, 0.05).name('Mobile Resolution Scale')
-  
   sunglassesFolder.open()
   smoothingFolder.open()
   manualFolder.open()
-  performanceFolder.open()
 }
 
 export { 

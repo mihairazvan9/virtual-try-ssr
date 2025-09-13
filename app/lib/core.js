@@ -23,7 +23,6 @@ let video, faceLandmarker;
 let mode = 'VIDEO';
 
 // Performance
-let lastVideoTime = -1;
 let results = undefined;
 
 // Glasses
@@ -65,9 +64,6 @@ const IDX = {
 // === Tmp pooled objects ===
 const _tmpVecA = new THREE.Vector3();
 const _tmpVecB = new THREE.Vector3();
-const _tmpVecC = new THREE.Vector3();
-const _tmpQuatA = new THREE.Quaternion();
-const _tmpMatA = new THREE.Matrix4();
 
 const correction = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, Math.PI, 0));
 
@@ -117,8 +113,8 @@ async function connectAICamera() {
     video = video_source;
     
     // Optimize video element for better performance
-    video.style.imageRendering = 'pixelated'; // Faster rendering
-    video.style.objectFit = 'cover'; // Better scaling
+    // video.style.imageRendering = 'pixelated'; // Faster rendering
+    // video.style.objectFit = 'cover'; // Better scaling
 
     camera = Helpers.init_ortografic_camera({ width: CAMERA_WIDTH, height: CAMERA_HEIGHT });
     renderer.setSize(CAMERA_WIDTH, CAMERA_HEIGHT);
@@ -138,7 +134,6 @@ async function connectAICamera() {
 function isLoaded() {
   const loading = document.getElementById('loading');
   if (loading) loading.style.display = 'none';
-  makeResetFunctionGlobal();
 }
 
 // === Model loading ===
@@ -147,7 +142,7 @@ async function loadGlassesModel() {
   const loader = new GLTFLoader().setDRACOLoader(draco);
 
   return new Promise((resolve, reject) => {
-    loader.load('/models/glasses1.glb', (gltf) => {
+    loader.load('/models/glasses0.glb', (gltf) => {
       const model = gltf.scene;
       model.traverse((c) => {
         if (c.isMesh) {
@@ -262,33 +257,9 @@ function updateGlassesPosition(lm, target = null) {
   const worldY = (0.5 - ny) * vh;
 
   if (target) return target.set(worldX, worldY, 0);
-  return new THREE.Vector3(worldX, worldY, 0);
+  return _tmpVecA.set(worldX, worldY, 0).clone();
 }
 
-// === RAF loop ===
-// async function __RAF() {
-//   if (!isRunning) return;
-
-//   const startTimeMs = performance.now();
-  
-//   // Only detect when video frame changes (like the example)
-//   if (lastVideoTime !== video.currentTime) {
-//     // ctx.drawImage(video, 0, 0, canvas_video.width/0.1, canvas_video.height/0.1)
-//     // lastVideoTime = video.currentTime;
-//     // results = await faceLandmarker.detectForVideo(canvas_video, startTimeMs)
-//     // ctx.restore()
-
-//     lastVideoTime = video.currentTime;
-//     results = faceLandmarker.detectForVideo(video, startTimeMs);
-//     // Process detection results
-//     if (results?.facialTransformationMatrixes?.length && anchor) {
-//       updateGlassesFromDetection(results);
-//     }
-//   }
-
-//   render();
-//   if (isRunning) requestAnimationFrame(__RAF);
-// }
 let is_processing = false
 let last_fps = 0
 let fps = 60
@@ -339,18 +310,10 @@ function isMobile() {
   return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 }
 
-function makeResetFunctionGlobal() {
-  if (typeof window !== 'undefined') {
-    // Global functions can be added here if needed
-  }
-}
-
-
 function START_RAF() { isRunning = true; }
 function STOP_RAF() { stop_web_camera(); isRunning = false; }
 
 export {
   init, scene, camera, renderer, canvas,
   START_RAF, STOP_RAF,
-  makeResetFunctionGlobal
 };
