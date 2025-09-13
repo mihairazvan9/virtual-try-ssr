@@ -3,8 +3,8 @@ import GUI from 'lil-gui'
 
 // ---------- config ----------
 const SMOOTHING = { 
-  pos: 0.35, 
-  rot: 0.35, 
+  pos: 0.8, 
+  rot: 0.8, 
   scale: 0.35, 
 }; // [0..1], higher = snappier
 

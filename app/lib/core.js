@@ -21,6 +21,8 @@ let is_running = true
 let video, canvas_video, ctx, face_landmarker, results
 let mode = 'VIDEO'
 let lastTs = -1
+let pendingDetection = null
+let lastDetectionTimestamp = 0
 
 // Performance optimization variables
 let lastDetectionTime = 0
@@ -125,14 +127,15 @@ function shouldDetectFace(currentTime) {
   }
   
   // Check if head has moved significantly (if we have previous results)
-  if (results && results.facialTransformationMatrixes && results.facialTransformationMatrixes.length) {
+  const currentResults = getSynchronizedDetection();
+  if (currentResults && currentResults.facialTransformationMatrixes && currentResults.facialTransformationMatrixes.length) {
     const tmpMatrix = getPooledMatrix4();
     const tmpPos = getPooledVector3();
     const tmpQuat = getPooledQuaternion();
     const tmpScale = getPooledVector3();
     
     try {
-      const m = results.facialTransformationMatrixes[0].data;
+      const m = currentResults.facialTransformationMatrixes[0].data;
       tmpMatrix.fromArray(m);
       tmpMatrix.decompose(tmpPos, tmpQuat, tmpScale);
       
@@ -157,15 +160,15 @@ function shouldDetectFace(currentTime) {
 }
 
 // === PERFORMANCE: Update head tracking data for movement detection ===
-function updateHeadTrackingData() {
-  if (results && results.facialTransformationMatrixes && results.facialTransformationMatrixes.length) {
+function updateHeadTrackingData(detectionResults) {
+  if (detectionResults && detectionResults.facialTransformationMatrixes && detectionResults.facialTransformationMatrixes.length) {
     const tmpMatrix = getPooledMatrix4();
     const tmpPos = getPooledVector3();
     const tmpQuat = getPooledQuaternion();
     const tmpScale = getPooledVector3();
     
     try {
-      const m = results.facialTransformationMatrixes[0].data;
+      const m = detectionResults.facialTransformationMatrixes[0].data;
       tmpMatrix.fromArray(m);
       tmpMatrix.decompose(tmpPos, tmpQuat, tmpScale);
       
@@ -183,7 +186,7 @@ function updateHeadTrackingData() {
 
 
 
-// === PERFORMANCE: Non-blocking face detection ===
+// === PERFORMANCE: Non-blocking face detection with frame sync ===
 async function runFaceDetectionAsync(canvas, timestamp) {
   if (isDetectionRunning) return null;
   
@@ -194,6 +197,16 @@ async function runFaceDetectionAsync(canvas, timestamp) {
     await new Promise(resolve => setTimeout(resolve, 0));
     
     const detectionResults = await face_landmarker.detectForVideo(canvas, timestamp);
+    
+    // Store detection results with timestamp for frame synchronization
+    if (detectionResults) {
+      pendingDetection = {
+        results: detectionResults,
+        timestamp: timestamp,
+        videoTime: video ? video.currentTime : 0
+      };
+    }
+    
     return detectionResults;
   } catch (error) {
     console.error('Face detection error:', error);
@@ -217,6 +230,23 @@ function getCachedHeadRotation(quat) {
   }
   
   return cachedHeadEuler.y;
+}
+
+// === FRAME SYNC: Get synchronized detection results ===
+function getSynchronizedDetection() {
+  if (!pendingDetection) return null;
+  
+  const currentVideoTime = video ? video.currentTime : 0;
+  const timeDiff = Math.abs(currentVideoTime - pendingDetection.videoTime);
+  
+  // Use detection if it's recent enough (within 100ms)
+  if (timeDiff < 0.1) {
+    const detection = pendingDetection.results;
+    lastDetectionTimestamp = pendingDetection.timestamp;
+    return detection;
+  }
+  
+  return null;
 }
 
 // === MEMORY: Simplified object pooling ===
@@ -649,20 +679,22 @@ async function __RAF () {
         detectionCtx.restore()
 
         // Run detection asynchronously without blocking the main thread
-        runFaceDetectionAsync(detectionCanvas, current_time).then(detectionResults => {
-          if (detectionResults) {
-            results = detectionResults
-            updateHeadTrackingData()
-            lastDetectionTime = current_time
-          }
-        }).catch(error => {
+        runFaceDetectionAsync(detectionCanvas, current_time).catch(error => {
           console.error('Face detection error:', error)
         })
       }
     }
 
+    // === FRAME SYNC: Get synchronized detection results ===
+    const synchronizedResults = getSynchronizedDetection();
+    
+    // Update head tracking data for movement detection
+    if (synchronizedResults) {
+      updateHeadTrackingData(synchronizedResults);
+    }
+    
     // === PERFORMANCE: Only process results if we have them and anchor exists ===
-    if (results && results.facialTransformationMatrixes && results.facialTransformationMatrixes.length && anchor) {
+    if (synchronizedResults && synchronizedResults.facialTransformationMatrixes && synchronizedResults.facialTransformationMatrixes.length && anchor) {
       const tmpMatrix = getPooledMatrix4();
       const tmpPos = getPooledVector3();
       const tmpQuat = getPooledQuaternion();
@@ -670,15 +702,15 @@ async function __RAF () {
       
       try {
         // 1) pose from transformation matrix
-        const m = results.facialTransformationMatrixes[0].data;
+        const m = synchronizedResults.facialTransformationMatrixes[0].data;
         tmpMatrix.fromArray(m);
         tmpMatrix.decompose(tmpPos, tmpQuat, tmpScale);
         tmpQuat.multiply(correction);
 
         // 2) scale using robust device-adaptive scaling and anchor position from 2D nose target
         let scale = 1.0;
-        if (results.faceLandmarks?.[0]) {
-          const eyeDistance = interpupillaryDistance(results.faceLandmarks[0]);
+        if (synchronizedResults.faceLandmarks?.[0]) {
+          const eyeDistance = interpupillaryDistance(synchronizedResults.faceLandmarks[0]);
           const headRotationY = getCachedHeadRotation(tmpQuat);
           
           scale = calculateRobustScale({
@@ -688,7 +720,7 @@ async function __RAF () {
             modelWidthUnits: modelBBoxWidth || 1,
           });
           
-          const targetNose = updateGlassesPosition(results.faceLandmarks[0]);
+          const targetNose = updateGlassesPosition(synchronizedResults.faceLandmarks[0]);
           if (targetNose) {
             smoothPos.to(targetNose, settings_glasses.smoothing.pos);
             anchor.position.copy(smoothPos.current);
