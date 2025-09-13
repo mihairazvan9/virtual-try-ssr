@@ -19,18 +19,12 @@ let camera, scene, renderer, canvas;
 let isRunning = true;
 
 // AI
-let video, canvasVideo, ctx, faceLandmarker;
+let video, faceLandmarker;
 let mode = 'VIDEO';
-let lastTs = -1;
-let pendingDetection = null;
-let lastDetectionTimestamp = 0;
 
 // Performance
-let detectionCanvas, detectionCtx, isDetectionRunning = false;
-let lastFrameTime = 0;
-const targetFPS = 60;
-const frameInterval = 1000 / targetFPS;
-let lastMemoryCleanup = 0;
+let lastVideoTime = -1;
+let results = undefined;
 
 // Glasses
 let sunglassesModel = null;
@@ -86,11 +80,6 @@ const putQuat = (q) => { q.identity(); quaternionPool.push(q); };
 const getMat4 = () => matrix4Pool.pop() || new THREE.Matrix4();
 const putMat4 = (m) => { m.identity(); matrix4Pool.push(m); };
 
-function cleanupMemory() {
-  vector3Pool.length = 0;
-  quaternionPool.length = 0;
-  matrix4Pool.length = 0;
-}
 
 // === Global Constants ===
 const CAMERA_WIDTH = 400;
@@ -126,18 +115,16 @@ async function connectAICamera() {
     const { mesh, video_source } = await add_web_camera();
     scene.add(mesh);
     video = video_source;
-
-    canvasVideo = document.createElement('canvas');
-    ctx = canvasVideo.getContext('2d');
-    canvasVideo.width = video.videoWidth;
-    canvasVideo.height = video.videoHeight;
-
-    createDetectionCanvas();
+    
+    // Optimize video element for better performance
+    video.style.imageRendering = 'pixelated'; // Faster rendering
+    video.style.objectFit = 'cover'; // Better scaling
 
     camera = Helpers.init_ortografic_camera({ width: CAMERA_WIDTH, height: CAMERA_HEIGHT });
     renderer.setSize(CAMERA_WIDTH, CAMERA_HEIGHT);
     camera.position.set(0, 0, 10);
     camera.lookAt(0, 0, 0);
+    camera.scale.x = -1;
 
     faceLandmarker = await Detect.faces(mode);
 
@@ -196,48 +183,47 @@ function getModelWidth(obj) {
 }
 
 // === Detection ===
-function createDetectionCanvas() {
-  const scale = settings_glasses.detectionResolutionScale || 0.5;
-  const vw = video?.videoWidth || CAMERA_WIDTH;
-  const vh = video?.videoHeight || CAMERA_HEIGHT;
-  const w = Math.floor(vw * scale), h = Math.floor(vh * scale);
+function updateGlassesFromDetection(res) {
+  if (!res?.facialTransformationMatrixes?.length || !anchor) return;
+  
+  const m = res.facialTransformationMatrixes[0].data;
+  const tmpM = getMat4().fromArray(m);
+  const tmpP = getVec3();
+  const tmpQ = getQuat();
+  const tmpS = getVec3();
+  tmpM.decompose(tmpP, tmpQ, tmpS);
+  tmpQ.multiply(correction);
 
-  if (detectionCanvas && (detectionCanvas.width !== w || detectionCanvas.height !== h)) {
-    detectionCanvas.width = w;
-    detectionCanvas.height = h;
+  let scale = 1;
+  if (res.faceLandmarks?.[0]) {
+    const ipd = interpupillaryDistance(res.faceLandmarks[0]);
+    const yaw = new THREE.Euler().setFromQuaternion(tmpQ).y;
+    scale = calculateRobustScale({
+      eyeDistanceNorm: ipd,
+      headRotationY: yaw,
+      videoWidthPx: video?.videoWidth || CAMERA_WIDTH,
+      modelWidthUnits: modelBBoxWidth || 1,
+    });
+
+    const nose = updateGlassesPosition(res.faceLandmarks[0], tmpP);
+    if (nose) smoothPos.to(nose, settings_glasses.smoothing.pos);
+    anchor.position.copy(smoothPos.current);
   }
-  if (!detectionCanvas) {
-    detectionCanvas = document.createElement('canvas');
-    detectionCtx = detectionCanvas.getContext('2d');
-    detectionCanvas.width = w;
-    detectionCanvas.height = h;
+
+  smoothRot.to(tmpQ, settings_glasses.smoothing.rot);
+  smoothScale.to(scale, settings_glasses.smoothing.scale);
+  anchor.quaternion.copy(smoothRot.current);
+  anchor.scale.setScalar(smoothScale.current);
+  anchor.position.z += settings_glasses.depthOffset;
+
+  if (sunglassesModel) {
+    sunglassesModel.position.set(settings_glasses.offsetX, settings_glasses.offsetY, settings_glasses.offsetZ);
+    sunglassesModel.rotation.y = settings_glasses.manualRotationY;
   }
-  return detectionCanvas;
+
+  putMat4(tmpM); putVec3(tmpP); putQuat(tmpQ); putVec3(tmpS);
 }
 
-async function runFaceDetectionAsync(canvas, ts) {
-  if (isDetectionRunning || !faceLandmarker) return null;
-  isDetectionRunning = true;
-  try {
-    await new Promise(r => setTimeout(r, 0));
-    const res = await faceLandmarker.detectForVideo(canvas, ts);
-    if (res) pendingDetection = { results: res, timestamp: ts, videoTime: video?.currentTime || 0 };
-    return res;
-  } catch (e) {
-    console.error('Detection error:', e);
-    return null;
-  } finally { isDetectionRunning = false; }
-}
-
-function getSynchronizedDetection() {
-  if (!pendingDetection) return null;
-  const diff = Math.abs((video?.currentTime || 0) - pendingDetection.videoTime);
-  if (diff < 0.1) {
-    lastDetectionTimestamp = pendingDetection.timestamp;
-    return pendingDetection.results;
-  }
-  return null;
-}
 
 // === Geometry helpers ===
 function interpupillaryDistance(lm) {
@@ -280,83 +266,65 @@ function updateGlassesPosition(lm, target = null) {
 }
 
 // === RAF loop ===
-async function __RAF() {
-  if (!isRunning) return;
+// async function __RAF() {
+//   if (!isRunning) return;
 
-  const now = performance.now();
-  if (lastTs < 0) lastTs = now;
-  if (now - lastFrameTime < frameInterval) return requestAnimationFrame(__RAF);
-  lastFrameTime = now;
+//   const startTimeMs = performance.now();
+  
+//   // Only detect when video frame changes (like the example)
+//   if (lastVideoTime !== video.currentTime) {
+//     // ctx.drawImage(video, 0, 0, canvas_video.width/0.1, canvas_video.height/0.1)
+//     // lastVideoTime = video.currentTime;
+//     // results = await faceLandmarker.detectForVideo(canvas_video, startTimeMs)
+//     // ctx.restore()
 
-  try {
-    if (mode === 'VIDEO') {
-      // ctx.save();
-      // ctx.clearRect(0, 0, canvasVideo.width, canvasVideo.height);
-      // ctx.translate(canvasVideo.width, 0);
-      // ctx.scale(-1, 1);
-      // ctx.drawImage(video, 0, 0, canvasVideo.width, canvasVideo.height);
-      // ctx.restore();
+//     lastVideoTime = video.currentTime;
+//     results = faceLandmarker.detectForVideo(video, startTimeMs);
+//     // Process detection results
+//     if (results?.facialTransformationMatrixes?.length && anchor) {
+//       updateGlassesFromDetection(results);
+//     }
+//   }
 
-      if (faceLandmarker && !isDetectionRunning) {
-        const dCanvas = createDetectionCanvas();
-        const dCtx = detectionCtx;
-        dCtx.save();
-        dCtx.clearRect(0, 0, dCanvas.width, dCanvas.height);
-        dCtx.translate(dCanvas.width, 0);
-        dCtx.scale(-1, 1);
-        dCtx.drawImage(video, 0, 0, dCanvas.width, dCanvas.height);
-        dCtx.restore();
-        runFaceDetectionAsync(dCanvas, now).catch(console.error);
+//   render();
+//   if (isRunning) requestAnimationFrame(__RAF);
+// }
+let is_processing = false
+let last_fps = 0
+let fps = 60
+async function __RAF () {
+  
+  if (!isRunning) return
+  
+  const current_time = performance.now()
+
+  if (!is_processing && (current_time - last_fps > 1000 / fps)) {
+
+    last_fps = current_time
+    is_processing = true
+
+    try {
+      results = await faceLandmarker.detectForVideo(video, current_time)
+      if (results?.facialTransformationMatrixes?.length && anchor) {
+        updateGlassesFromDetection(results);
       }
+    } catch (error) {
+      console.error('Error detecting face landmarks:', error)
+    } finally {
+      is_processing = false
     }
+  }
 
-    const res = getSynchronizedDetection();
-    if (res?.facialTransformationMatrixes?.length && anchor) {
-      const m = res.facialTransformationMatrixes[0].data;
-      const tmpM = getMat4().fromArray(m);
-      const tmpP = getVec3();
-      const tmpQ = getQuat();
-      const tmpS = getVec3();
-      tmpM.decompose(tmpP, tmpQ, tmpS);
-      tmpQ.multiply(correction);
+  render()
 
-      let scale = 1;
-      if (res.faceLandmarks?.[0]) {
-        const ipd = interpupillaryDistance(res.faceLandmarks[0]);
-        const yaw = new THREE.Euler().setFromQuaternion(tmpQ).y;
-        scale = calculateRobustScale({
-          eyeDistanceNorm: ipd,
-          headRotationY: yaw,
-          videoWidthPx: canvasVideo?.width || CAMERA_WIDTH,
-          modelWidthUnits: modelBBoxWidth || 1,
-        });
-
-        const nose = updateGlassesPosition(res.faceLandmarks[0], tmpP);
-        if (nose) smoothPos.to(nose, settings_glasses.smoothing.pos);
-        anchor.position.copy(smoothPos.current);
-      }
-
-      smoothRot.to(tmpQ, settings_glasses.smoothing.rot);
-      smoothScale.to(scale, settings_glasses.smoothing.scale);
-      anchor.quaternion.copy(smoothRot.current);
-      anchor.scale.setScalar(smoothScale.current);
-      anchor.position.z += settings_glasses.depthOffset;
-
-      if (sunglassesModel) {
-        sunglassesModel.position.set(settings_glasses.offsetX, settings_glasses.offsetY, settings_glasses.offsetZ);
-        sunglassesModel.rotation.y = settings_glasses.manualRotationY;
-      }
-
-      putMat4(tmpM); putVec3(tmpP); putQuat(tmpQ); putVec3(tmpS);
-    }
-  } catch (e) { console.error(e); }
-
-  render();
-  if (now - lastMemoryCleanup > 30000) lastMemoryCleanup = now;
-  if (isRunning) requestAnimationFrame(__RAF);
+  if (isRunning) {
+    requestAnimationFrame(__RAF)
+  }
 }
 
-function render() { renderer.renderAsync(scene, camera); }
+async function render() { 
+  await renderer.renderAsync(scene, camera); 
+}
 
 function onResize() {
   const w = CAMERA_WIDTH, h = CAMERA_HEIGHT;
@@ -373,13 +341,13 @@ function isMobile() {
 
 function makeResetFunctionGlobal() {
   if (typeof window !== 'undefined') {
-    window.cleanupMemory = cleanupMemory;
+    // Global functions can be added here if needed
   }
 }
 
 
 function START_RAF() { isRunning = true; }
-function STOP_RAF() { stop_web_camera(); isRunning = false; cleanupMemory(); }
+function STOP_RAF() { stop_web_camera(); isRunning = false; }
 
 export {
   init, scene, camera, renderer, canvas,

@@ -13,7 +13,7 @@ function getPortraitConstraints() {
         height: { min: 480, ideal: 720, max: 960 }, // Reduced max for mobile
         facingMode: 'user',
         aspectRatio: { min: 1.2, ideal: 1.5, max: 2.0 },
-        frameRate: { min: 15, ideal: 24, max: 30 }, // Reduced frame rate for mobile
+        frameRate: { min: 15, ideal: 30, max: 60 }, // Reduced frame rate for mobile
         // Additional mobile optimizations
         resizeMode: 'crop-and-scale',
         whiteBalanceMode: 'continuous',
@@ -28,7 +28,7 @@ function getPortraitConstraints() {
         height: { min: 480, ideal: 960, max: 1920 },
         facingMode: 'user',
         aspectRatio: { min: 1.2, ideal: 1.5, max: 2.0 },
-        frameRate: { min: 15, ideal: 30, max: 60 },
+        frameRate: { min: 15, ideal: 30, max: 60 }, // Capped at 30fps for performance
         // Desktop optimizations
         resizeMode: 'crop-and-scale',
         whiteBalanceMode: 'continuous',
@@ -46,7 +46,7 @@ function getFallbackConstraints() {
       facingMode: 'user',
       width: { min: 320, ideal: 480, max: 640 },
       height: { min: 480, ideal: 720, max: 960 },
-      frameRate: { min: 15, ideal: 24, max: 30 }
+      frameRate: { min: 15, ideal: 30, max: 60 }
     }
   };
 }
@@ -81,7 +81,6 @@ async function add_web_camera() {
       })
 
       const mesh = new THREE.Mesh(geometry, material)
-      mesh.rotation.y = Math.PI 
       
       console.log('Video setup (Portrait Mode):', {
         videoWidth: video_source.videoWidth,
@@ -147,7 +146,7 @@ async function add_web_camera() {
         .then(stream => {
           video_source.srcObject = stream
           video_source.play()
-          video_source.style.transform = 'scaleX(-1)';
+          // video_source.style.transform = 'scaleX(-1)';
         })
         .catch(error => {
           console.error('Unable to access the camera/webcam.', error)

@@ -49,19 +49,26 @@ function init_ortografic_camera ({
 }
 
 function init_renderer ({ canvas }) {
+  const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
   const renderer = new THREE.WebGPURenderer({
     canvas,
-    antialias: true,
+    antialias: !isMobile, // disable MSAA on mobile for perf
     alpha: true
   })
 
+  // renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // Cap pixel ratio for performance
+  // renderer.antialias = false; // Disable antialiasing for better performance
+  renderer.powerPreference = 'high-performance';
+
   renderer.outputColorSpace = THREE.SRGBColorSpace
-  renderer.setPixelRatio(window.devicePixelRatio)
+  // Cap DPR to reduce GPU load on high-DPI displays
+  const cappedDpr = isMobile ? 1.5 : 2
+  renderer.setPixelRatio(Math.min(cappedDpr, window.devicePixelRatio || 1))
   renderer.setSize(canvas.offsetWidth, canvas.offsetHeight)
   renderer.toneMapping = THREE.ACESFilmicToneMapping
   renderer.toneMappingExposure = 1
   renderer.physicallyCorrectLights = true
-  renderer.setClearColor(0x000000)
+  renderer.setClearColor(0x000000, 0)
 
   return renderer
 }

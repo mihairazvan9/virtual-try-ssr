@@ -16,7 +16,8 @@ async function faces (mode = 'VIDEO') {
     if (!cached_vision) {
       console.log('Loading MediaPipe WASM files...')
       cached_vision = await FilesetResolver.forVisionTasks(
-        'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0/wasm'
+        'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm'
+        // 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm'
         // 'https://unpkg.com/@mediapipe/tasks-vision/wasm'
       )
       console.log('MediaPipe WASM files loaded and cached')
@@ -26,14 +27,15 @@ async function faces (mode = 'VIDEO') {
     
     const face_landmarker = await FaceLandmarker.createFromOptions(cached_vision, {
       baseOptions: {
+        // modelAssetPath: `https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task`,
         modelAssetPath: `/face_landmarker.task`,
         delegate: 'GPU'
       },
+      outputFaceBlendshapes: false,
       runningMode: mode, 
       numFaces: 1,
-      outputFaceBlendshapes: false,
       outputFacialTransformationMatrixes: true, // <-- we use this for head pose
-      // outputFaceLandmarks: true // also handy for scale/anchor
+      outputFaceLandmarks: true, // Enable for better tracking
     })
 
     return face_landmarker
