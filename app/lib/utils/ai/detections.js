@@ -26,7 +26,7 @@ async function faces (mode = 'VIDEO') {
     
     const face_landmarker = await FaceLandmarker.createFromOptions(cached_vision, {
       baseOptions: {
-        modelAssetPath: `https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task`,
+        modelAssetPath: `/face_landmarker.task`,
         delegate: 'GPU'
       },
       runningMode: mode, 

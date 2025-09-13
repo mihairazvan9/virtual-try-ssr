@@ -2,16 +2,23 @@ import * as THREE from 'three/webgpu'
 
 let stream
 
+// === CAMERA: Optimized constraints for better performance ===
 function getPortraitConstraints() {
-  if (isMobile()) {
+  const isMobileDevice = isMobile();
+  
+  if (isMobileDevice) {
     return {
       video: {
-        width: { min: 320, ideal: 640, max: 1280 },
-        height: { min: 480, ideal: 960, max: 1920 },
+        width: { min: 320, ideal: 480, max: 640 }, // Reduced max for mobile
+        height: { min: 480, ideal: 720, max: 960 }, // Reduced max for mobile
         facingMode: 'user',
-        // Force portrait aspect ratio (height > width) on all devices
         aspectRatio: { min: 1.2, ideal: 1.5, max: 2.0 },
-        frameRate: { min: 15, ideal: 30, max: 60 },
+        frameRate: { min: 15, ideal: 24, max: 30 }, // Reduced frame rate for mobile
+        // Additional mobile optimizations
+        resizeMode: 'crop-and-scale',
+        whiteBalanceMode: 'continuous',
+        exposureMode: 'continuous',
+        focusMode: 'continuous'
       },
     };
   } else {
@@ -20,13 +27,28 @@ function getPortraitConstraints() {
         width: { min: 320, ideal: 640, max: 1280 },
         height: { min: 480, ideal: 960, max: 1920 },
         facingMode: 'user',
-        // Force portrait aspect ratio (height > width) on all devices
-        // aspectRatio: { min: 1.2, ideal: 1.5, max: 2.0 },
+        aspectRatio: { min: 1.2, ideal: 1.5, max: 2.0 },
         frameRate: { min: 15, ideal: 30, max: 60 },
+        // Desktop optimizations
+        resizeMode: 'crop-and-scale',
+        whiteBalanceMode: 'continuous',
+        exposureMode: 'continuous',
+        focusMode: 'continuous'
       },
     };
   } 
-  
+}
+
+// === CAMERA: Performance-optimized fallback constraints ===
+function getFallbackConstraints() {
+  return {
+    video: {
+      facingMode: 'user',
+      width: { min: 320, ideal: 480, max: 640 },
+      height: { min: 480, ideal: 720, max: 960 },
+      frameRate: { min: 15, ideal: 24, max: 30 }
+    }
+  };
 }
 
 async function add_web_camera() {
@@ -78,48 +100,42 @@ async function add_web_camera() {
       // Force portrait constraints on ALL devices
       let constraints = getPortraitConstraints();
 
-      // Add a simple fallback constraint set
-      const simpleConstraints = {
-        video: {
-          facingMode: 'user',
-          width: { min: 320, ideal: 640, max: 1280 },
-          height: { min: 480, ideal: 960, max: 1920 },
-        }
-      };
-
-      // Try to get user media with fallback constraints
+      // === CAMERA: Optimized constraint fallback system ===
       const tryConstraints = async (constraintSet) => {
         try {
           const stream = await navigator.mediaDevices.getUserMedia(constraintSet);
           return stream;
         } catch (error) {
-          console.log('Constraint set failed:', error.name, error.message);
           return null;
         }
       };
 
-      // Try multiple constraint sets with fallbacks
+      // === CAMERA: Progressive constraint fallback with performance priority ===
       const tryMultipleConstraints = async () => {
-        // First try: Portrait constraints (forced on all devices)
+        // First try: Optimized portrait constraints
         let stream = await tryConstraints(constraints);
         if (stream) return stream;
 
-        // Second try: Simple constraints
-        stream = await tryConstraints(simpleConstraints);
+        // Second try: Fallback constraints (lower resolution)
+        stream = await tryConstraints(getFallbackConstraints());
         if (stream) return stream;
 
         // Third try: Basic constraints with minimal requirements
         const basicConstraints = {
           video: {
             facingMode: 'user',
+            width: { ideal: 320 },
+            height: { ideal: 480 }
           }
         };
         stream = await tryConstraints(basicConstraints);
         if (stream) return stream;
 
-        // Last resort: Any camera
+        // Last resort: Any camera with minimal settings
         const anyConstraints = {
-          video: true
+          video: {
+            facingMode: 'user'
+          }
         };
         stream = await tryConstraints(anyConstraints);
         if (stream) return stream;

@@ -22,63 +22,58 @@ let video, canvas_video, ctx, face_landmarker, results
 let mode = 'VIDEO'
 let lastTs = -1
 
+// Performance optimization variables
+let lastDetectionTime = 0
+let lastHeadPosition = new THREE.Vector3()
+let lastHeadRotation = new THREE.Quaternion()
+let detectionCanvas = null
+let detectionCtx = null
+let isDetectionRunning = false
+let lastFrameTime = 0
+let targetFPS = 60
+let frameInterval = 1000 / targetFPS
+let lastMemoryCleanup = 0
+
 // Glasses and anchor
 let sunglassesModel = null
 let anchor = null
-let fitted = false
-let model = null
-// Model switching
 let currentModelId = 1
-let modelCache = new Map() // Cache loaded models
-
-// === NEW: globals for model sizing ===
-let modelBBoxWidth = 0;  // width (X) of glasses model in its local units at scale 1
+let modelCache = new Map()
+let modelBBoxWidth = 0
 
 // Initialize settings GUI
 if (process.client) {
   settings_glasses.show ? settings() : null
 }
 
-// Generic smoothing helper that can handle vectors, quaternions, and scalars
+// === SMOOTHING: Simplified smoothing helper ===
 class SmoothedValue {
   constructor(initialValue, type = 'scalar') {
     this.value = initialValue;
     this.type = type;
-    
-    // Helper method for linear interpolation
-    this.lerp = (a, b, t) => a + (b - a) * t;
   }
   
   to(target, alpha) {
+    if (alpha <= 0) return;
+    
     switch (this.type) {
       case 'vector3':
-        // Handle Vector3 with component-wise lerp
-        this.value.set(
-          this.lerp(this.value.x, target.x, alpha),
-          this.lerp(this.value.y, target.y, alpha),
-          this.lerp(this.value.z, target.z, alpha)
-        );
+        this.value.lerp(target, alpha);
         break;
-        
       case 'quaternion':
-        // Handle Quaternion with slerp
         this.value.slerp(target, alpha);
         break;
-        
       case 'scalar':
       default:
-        // Handle scalar values with lerp
-        this.value = this.lerp(this.value, target, alpha);
+        this.value += (target - this.value) * alpha;
         break;
     }
   }
   
-  // Getter for the current value
   get current() {
     return this.value;
   }
   
-  // Setter for the current value
   set current(val) {
     this.value = val;
   }
@@ -92,12 +87,249 @@ function getModelWidth(obj) {
   return size.x; // width across X
 }
 
+// === PERFORMANCE: Create optimized detection canvas ===
+function createDetectionCanvas() {
+  if (detectionCanvas) return detectionCanvas;
+  
+  // Create a smaller canvas for face detection using settings
+  const scaleFactor = settings_glasses.detectionResolutionScale || 0.5;
+  detectionCanvas = document.createElement('canvas');
+  detectionCtx = detectionCanvas.getContext('2d');
+  
+  // Set smaller dimensions for detection
+  detectionCanvas.width = Math.floor((video?.videoWidth || 400) * scaleFactor);
+  detectionCanvas.height = Math.floor((video?.videoHeight || 650) * scaleFactor);
+  
+  // Detection canvas created with optimized resolution
+  
+  return detectionCanvas;
+}
+
+// === PERFORMANCE: Check if head movement is significant enough for new detection ===
+function shouldDetectFace(currentTime) {
+  // Always detect on first frame
+  if (lastDetectionTime === 0) return true;
+  
+  // Get settings
+  const detectionFrameSkip = settings_glasses.detectionFrameSkip || 2;
+  const detectionInterval = 1000 / (60 / detectionFrameSkip); // e.g., 30fps for skip=2
+  const adaptiveDetection = settings_glasses.adaptiveDetection !== false;
+  const headMovementThreshold = settings_glasses.headMovementThreshold || 0.01;
+  
+  // Check time-based detection interval
+  if (currentTime - lastDetectionTime < detectionInterval) return false;
+  
+  // If adaptive detection is disabled, use simple frame skipping
+  if (!adaptiveDetection) {
+    return true;
+  }
+  
+  // Check if head has moved significantly (if we have previous results)
+  if (results && results.facialTransformationMatrixes && results.facialTransformationMatrixes.length) {
+    const tmpMatrix = getPooledMatrix4();
+    const tmpPos = getPooledVector3();
+    const tmpQuat = getPooledQuaternion();
+    const tmpScale = getPooledVector3();
+    
+    try {
+      const m = results.facialTransformationMatrixes[0].data;
+      tmpMatrix.fromArray(m);
+      tmpMatrix.decompose(tmpPos, tmpQuat, tmpScale);
+      
+      // Calculate movement distance
+      const positionDelta = lastHeadPosition.distanceTo(tmpPos);
+      const rotationDelta = lastHeadRotation.angleTo(tmpQuat);
+      
+      // Only detect if significant movement or enough time has passed
+      const significantMovement = positionDelta > headMovementThreshold || rotationDelta > 0.1;
+      const enoughTimePassed = currentTime - lastDetectionTime > detectionInterval * 2;
+      
+      return significantMovement || enoughTimePassed;
+    } finally {
+      releaseMatrix4(tmpMatrix);
+      releaseVector3(tmpPos);
+      releaseQuaternion(tmpQuat);
+      releaseVector3(tmpScale);
+    }
+  }
+  
+  return true; // Default to detecting if no previous data
+}
+
+// === PERFORMANCE: Update head tracking data for movement detection ===
+function updateHeadTrackingData() {
+  if (results && results.facialTransformationMatrixes && results.facialTransformationMatrixes.length) {
+    const tmpMatrix = getPooledMatrix4();
+    const tmpPos = getPooledVector3();
+    const tmpQuat = getPooledQuaternion();
+    const tmpScale = getPooledVector3();
+    
+    try {
+      const m = results.facialTransformationMatrixes[0].data;
+      tmpMatrix.fromArray(m);
+      tmpMatrix.decompose(tmpPos, tmpQuat, tmpScale);
+      
+      lastHeadPosition.copy(tmpPos);
+      lastHeadRotation.copy(tmpQuat);
+    } finally {
+      releaseMatrix4(tmpMatrix);
+      releaseVector3(tmpPos);
+      releaseQuaternion(tmpQuat);
+      releaseVector3(tmpScale);
+    }
+  }
+}
+
+
+
+
+// === PERFORMANCE: Non-blocking face detection ===
+async function runFaceDetectionAsync(canvas, timestamp) {
+  if (isDetectionRunning) return null;
+  
+  isDetectionRunning = true;
+  
+  try {
+    // Use setTimeout to yield control back to the main thread
+    await new Promise(resolve => setTimeout(resolve, 0));
+    
+    const detectionResults = await face_landmarker.detectForVideo(canvas, timestamp);
+    return detectionResults;
+  } catch (error) {
+    console.error('Face detection error:', error);
+    return null;
+  } finally {
+    isDetectionRunning = false;
+  }
+}
+
+// === PERFORMANCE: Cached calculations ===
+let cachedHeadEuler = new THREE.Euler();
+let lastQuatHash = 0;
+
+function getCachedHeadRotation(quat) {
+  // Simple hash to check if quaternion changed significantly
+  const quatHash = Math.floor(quat.x * 1000) + Math.floor(quat.y * 1000) + Math.floor(quat.z * 1000) + Math.floor(quat.w * 1000);
+  
+  if (quatHash !== lastQuatHash) {
+    cachedHeadEuler.setFromQuaternion(quat);
+    lastQuatHash = quatHash;
+  }
+  
+  return cachedHeadEuler.y;
+}
+
+// === MEMORY: Simplified object pooling ===
+const vector3Pool = [];
+const quaternionPool = [];
+const matrix4Pool = [];
+
+function getPooledVector3() {
+  return vector3Pool.pop() || new THREE.Vector3();
+}
+
+function releaseVector3(vec) {
+  vec.set(0, 0, 0);
+  vector3Pool.push(vec);
+}
+
+function getPooledQuaternion() {
+  return quaternionPool.pop() || new THREE.Quaternion();
+}
+
+function releaseQuaternion(quat) {
+  quat.set(0, 0, 0, 1);
+  quaternionPool.push(quat);
+}
+
+function getPooledMatrix4() {
+  return matrix4Pool.pop() || new THREE.Matrix4();
+}
+
+function releaseMatrix4(matrix) {
+  matrix.identity();
+  matrix4Pool.push(matrix);
+}
+
+
+// === MEMORY: Memory management functions ===
+function cleanupMemory() {
+  // Clear object pools
+  vector3Pool.length = 0;
+  quaternionPool.length = 0;
+  matrix4Pool.length = 0;
+  
+  // Clear model cache if it gets too large
+  if (modelCache.size > 10) {
+    modelCache.clear();
+  }
+  
+  // Force garbage collection if available
+  if (window.gc) {
+    window.gc();
+  }
+}
+
+// === MODEL LOADING: Simplified model loading ===
+async function loadGlassesModel(modelId) {
+  // Check if model is already cached
+  if (modelCache.has(modelId)) {
+    return modelCache.get(modelId);
+  }
+  
+  const dracoLoader = new DRACOLoader()
+  dracoLoader.setDecoderPath('/draco/')
+  dracoLoader.setDecoderConfig({ type: 'js' })
+  
+  const loader = new GLTFLoader()
+  loader.setDRACOLoader(dracoLoader)
+  
+  const modelPath = `/models/glasses${modelId}.glb`
+  
+  return new Promise((resolve, reject) => {
+    loader.load(modelPath, (gltfScene) => {
+      const model = gltfScene.scene
+      
+      // Basic model optimization
+      model.traverse((child) => {
+        if (child.isMesh) {
+          child.frustumCulled = true;
+          if (child.geometry) {
+            child.geometry.computeBoundingBox();
+            child.geometry.computeBoundingSphere();
+          }
+          if (child.material) {
+            child.material.needsUpdate = false;
+          }
+        }
+      });
+      
+      modelCache.set(modelId, model)
+      resolve(model)
+    }, undefined, (error) => {
+      console.error('Error loading glasses model:', error)
+      reject(error)
+    })
+  })
+}
+
 const smoothPos = new SmoothedValue(new THREE.Vector3(0,0,0), 'vector3');
 const smoothRot = new SmoothedValue(new THREE.Quaternion(), 'quaternion');
 const smoothScale = new SmoothedValue(1, 'scalar');
 
+// === MOBILE: Simplified mobile detection and optimization ===
 function isMobile() {
   return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+}
+
+function applyMobileOptimizations() {
+  if (!settings_glasses.enableMobileOptimizations || !isMobile()) return;
+  
+  // Apply mobile-specific settings
+  settings_glasses.detectionFrameSkip = 2; // Detect every 2nd frame
+  settings_glasses.detectionResolutionScale = 0.6; // 60% resolution
+  settings_glasses.mobileResolutionScale = 0.75; // 75% resolution
+  settings_glasses.mobileFrameRate = 24; // 24fps
 }
 
 // Indices for key points (MediaPipe FaceMesh canonical)
@@ -108,11 +340,8 @@ const IDX_LEFT_INNER = 133;   // left eye inner corner
 const IDX_RIGHT_INNER = 362;  // right eye inner corner
 const IDX_LEFT_ABOVE = 445;
 const IDX_RIGHT_ABOVE = 225;
-// Temporary objects for calculations
-const tmpMatrix = new THREE.Matrix4();
-const tmpPos = new THREE.Vector3();
-const tmpQuat = new THREE.Quaternion();
-const tmpScale = new THREE.Vector3();
+// === MEMORY: Use pooled objects instead of creating new ones ===
+// These will be replaced with pooled objects in the render loop
 
 // Correction from MediaPipe head frame to three.js
 const correction = new THREE.Quaternion()
@@ -139,7 +368,9 @@ async function init(canvas_id) {
   // scene.background = hdr
   scene.environment = hdr
   
-  // add_lights()
+  // === MOBILE: Apply mobile optimizations on initialization ===
+  applyMobileOptimizations();
+  
   await add_model()
   
   window.addEventListener('resize', () => on_window_resize(), false)
@@ -172,6 +403,9 @@ async function connect_ai_camera () {
     // Set canvas dimensions to match video dimensions
     canvas_video.width = video.videoWidth
     canvas_video.height = video.videoHeight
+    
+    // Create optimized detection canvas
+    createDetectionCanvas()
 
     // Force portrait dimensions for camera on ALL devices
     // This ensures consistent portrait experience across mobile and desktop
@@ -208,48 +442,13 @@ function is_loaded () {
   makeResetFunctionGlobal()
 }
 
-// Function to load a specific glasses model
-async function loadGlassesModel(modelId) {
-  // Check if model is already cached
-  if (modelCache.has(modelId)) {
-    return modelCache.get(modelId)
-  }
-  
-  try {
-    const dracoLoader = new DRACOLoader()
-    dracoLoader.setDecoderPath('/draco/')
-    dracoLoader.setDecoderConfig({ type: 'js' })
-    
-    const loader = new GLTFLoader()
-    loader.setDRACOLoader(dracoLoader)
-    
-    // Use the public directory path since assets might not be accessible directly
-    const modelPath = `/models/glasses${modelId}.glb`
-    
-    console.log('Loading glasses model:', modelPath)
-    
-    return new Promise((resolve, reject) => {
-      loader.load(modelPath, (gltfScene) => {
-        const model = gltfScene.scene
-        modelCache.set(modelId, model)
-        resolve(model)
-      }, undefined, (error) => {
-        console.error('Error loading glasses model:', error)
-        reject(error)
-      })
-    })
-  } catch (error) {
-    console.error('Error loading glasses model:', error)
-    throw error
-  }
-}
 
 // Function to switch glasses model
 async function switchGlassesModel(modelId) {
   if (modelId === currentModelId) return
   
   try {
-    console.log(`Switching to glasses model ${modelId}`)
+    // Switching to glasses model
     
     // Remove current model from anchor
     if (sunglassesModel && anchor) {
@@ -270,10 +469,10 @@ async function switchGlassesModel(modelId) {
       
       // Update model width for scaling calculations
       // modelBBoxWidth = Math.max(1e-6, getModelWidth(sunglassesModel))
-      console.log('New glasses model width (units):', modelBBoxWidth)
+      // New glasses model width cached
       
       currentModelId = modelId
-      console.log(`Successfully switched to glasses model ${modelId}`)
+      // Successfully switched to glasses model
     }
   } catch (error) {
     console.error('Error switching glasses model:', error)
@@ -301,9 +500,15 @@ async function add_model () {
       
       // Cache the model width at scale=1
       modelBBoxWidth = Math.max(1e-6, getModelWidth(sunglassesModel))
-      console.log('Glasses model width (units):', modelBBoxWidth)
+      // Model width cached for scaling calculations
       
-      console.log('Initial sunglasses model loaded and anchored')
+      // Initial sunglasses model loaded and anchored
+      
+      // Preload other models in background
+      setTimeout(() => {
+        [2, 3, 4, 5].forEach(id => loadGlassesModel(id));
+      }, 2000);
+      
     } else {
       console.error('Failed to load initial sunglasses model!')
     }
@@ -397,18 +602,10 @@ function updateGlassesPosition(landmarks) {
   return new THREE.Vector3(worldX, worldY, 0);
 }
 
-function add_lights () {
-  const light = new THREE.AmbientLight(0xffffff, 1)
-  scene.add(light)
-  
-  const directionalLight = new THREE.DirectionalLight(0xffffff, 1)
-  directionalLight.position.set(0, 1, 1)
-  scene.add(directionalLight)
-}
-
 function makeResetFunctionGlobal() {
   if (typeof window !== 'undefined') {
     window.switchGlassesModel = switchGlassesModel
+    window.cleanupMemory = cleanupMemory
   }
 }
 
@@ -416,90 +613,113 @@ async function __RAF () {
   if (!is_running) return
 
   const current_time = performance.now()
+  const frameStartTime = current_time
   if (lastTs < 0) lastTs = current_time
+
+  // === PERFORMANCE: Frame rate limiting ===
+  if (current_time - lastFrameTime < frameInterval) {
+    requestAnimationFrame(__RAF)
+    return
+  }
+  lastFrameTime = current_time
 
   try {
     if (mode === 'VIDEO') {
+      // Always draw the video for display (this is fast)
       ctx.save()
       ctx.clearRect(0, 0, canvas_video.width, canvas_video.height)
       ctx.translate(canvas_video.width, 0)
       ctx.scale(-1, 1)
       ctx.drawImage(video, 0, 0, canvas_video.width, canvas_video.height)
-
-      // Run the model at video frametimestamps for better sync
-      results = await face_landmarker.detectForVideo(canvas_video, current_time)
       ctx.restore()
+
+      // === PERFORMANCE: Only run face detection when needed ===
+      const shouldDetect = shouldDetectFace(current_time)
+      
+      if (shouldDetect && face_landmarker && !isDetectionRunning) {
+        // Use lower resolution canvas for detection
+        const detectionCanvas = createDetectionCanvas()
+        
+        // Draw video to detection canvas at lower resolution
+        detectionCtx.save()
+        detectionCtx.clearRect(0, 0, detectionCanvas.width, detectionCanvas.height)
+        detectionCtx.translate(detectionCanvas.width, 0)
+        detectionCtx.scale(-1, 1)
+        detectionCtx.drawImage(video, 0, 0, detectionCanvas.width, detectionCanvas.height)
+        detectionCtx.restore()
+
+        // Run detection asynchronously without blocking the main thread
+        runFaceDetectionAsync(detectionCanvas, current_time).then(detectionResults => {
+          if (detectionResults) {
+            results = detectionResults
+            updateHeadTrackingData()
+            lastDetectionTime = current_time
+          }
+        }).catch(error => {
+          console.error('Face detection error:', error)
+        })
+      }
     }
 
-    if (results && results.facialTransformationMatrixes && results.facialTransformationMatrixes.length) {
-      // 1) pose from transformation matrix
-      const m = results.facialTransformationMatrixes[0].data; // 16 floats
-      tmpMatrix.fromArray(m);
-      tmpMatrix.decompose(tmpPos, tmpQuat, tmpScale);
-      // apply correction (aligns your model's forward/up with head)
-      tmpQuat.multiply(correction);
+    // === PERFORMANCE: Only process results if we have them and anchor exists ===
+    if (results && results.facialTransformationMatrixes && results.facialTransformationMatrixes.length && anchor) {
+      const tmpMatrix = getPooledMatrix4();
+      const tmpPos = getPooledVector3();
+      const tmpQuat = getPooledQuaternion();
+      const tmpScale = getPooledVector3();
+      
+      try {
+        // 1) pose from transformation matrix
+        const m = results.facialTransformationMatrixes[0].data;
+        tmpMatrix.fromArray(m);
+        tmpMatrix.decompose(tmpPos, tmpQuat, tmpScale);
+        tmpQuat.multiply(correction);
 
-      // 2) scale using robust device-adaptive scaling and anchor position from 2D nose target
-      let scale = 1.0;
-      if (results.faceLandmarks?.[0]) {
-        const eyeDistance = interpupillaryDistance(results.faceLandmarks[0]);
-        
-        // Extract head rotation from the facial transformation matrix
-        // Convert quaternion to euler angles to get Y rotation (head turning left/right)
-        const headEuler = new THREE.Euler().setFromQuaternion(tmpQuat);
-        const headRotationY = headEuler.y; // This represents head turning left/right
-        
-        // // Debug: Log rotation information
-        // if (Math.abs(headRotationY) > 0.1) {
-        //   const rotationDegrees = (headRotationY * 180 / Math.PI).toFixed(1)
-        //   const isProfileView = Math.abs(headRotationY) > 0.5 // More than ~30 degrees
+        // 2) scale using robust device-adaptive scaling and anchor position from 2D nose target
+        let scale = 1.0;
+        if (results.faceLandmarks?.[0]) {
+          const eyeDistance = interpupillaryDistance(results.faceLandmarks[0]);
+          const headRotationY = getCachedHeadRotation(tmpQuat);
           
-        //   console.log(`Head rotation: ${rotationDegrees}° ${isProfileView ? '(PROFILE VIEW)' : '(Slight turn)'}`, {
-        //     yaw: headRotationY,
-        //     degrees: rotationDegrees,
-        //     eyeDistance: eyeDistance,
-        //     compensationEnabled: settings_glasses.rotationCompensationEnabled
-        //   });
-        // }
-        
-        // === UPDATED: pass video width & measured model width ===
-        scale = calculateRobustScale({
-          eyeDistanceNorm: eyeDistance,
-          headRotationY,
-          videoWidthPx: canvas_video?.width || video?.videoWidth || 400,
-          modelWidthUnits: modelBBoxWidth || 1,
-        });
-        
-        // Compute nose target on video plane and drive anchor position with smoothing
-        const targetNose = updateGlassesPosition(results.faceLandmarks[0]);
-        if (targetNose) {
-          smoothPos.to(targetNose, settings_glasses.smoothing.pos);
-          anchor.position.copy(smoothPos.current);
+          scale = calculateRobustScale({
+            eyeDistanceNorm: eyeDistance,
+            headRotationY,
+            videoWidthPx: canvas_video?.width || video?.videoWidth || 400,
+            modelWidthUnits: modelBBoxWidth || 1,
+          });
+          
+          const targetNose = updateGlassesPosition(results.faceLandmarks[0]);
+          if (targetNose) {
+            smoothPos.to(targetNose, settings_glasses.smoothing.pos);
+            anchor.position.copy(smoothPos.current);
+          }
         }
-      }
 
-      // 3) smooth rotation and scale; position already handled by nose target
-      smoothRot.to(tmpQuat, settings_glasses.smoothing.rot);
-      smoothScale.to(scale, settings_glasses.smoothing.scale);
+        // 3) smooth rotation and scale
+        smoothRot.to(tmpQuat, settings_glasses.smoothing.rot);
+        smoothScale.to(scale, settings_glasses.smoothing.scale);
 
-      // 4) apply to anchor + child offsets
-      anchor.quaternion.copy(smoothRot.current);
-      anchor.scale.setScalar(smoothScale.current);
-      
-      // Apply depth offset to anchor position in world space (before rotation)
-      // Reset to base position first, then add depth offset
-      anchor.position.copy(smoothPos.current);
-      anchor.position.z += settings_glasses.depthOffset;
-      
-      // Apply manual Y rotation override
-      if (sunglassesModel) {
-        // Apply local offsets so the frame can be aligned to ears and nose
-        sunglassesModel.position.set(
-          settings_glasses.offsetX,
-          settings_glasses.offsetY,
-          settings_glasses.offsetZ
-        );
-        sunglassesModel.rotation.y = settings_glasses.manualRotationY;
+        // 4) apply to anchor + child offsets
+        anchor.quaternion.copy(smoothRot.current);
+        anchor.scale.setScalar(smoothScale.current);
+        
+        anchor.position.copy(smoothPos.current);
+        anchor.position.z += settings_glasses.depthOffset;
+        
+        if (sunglassesModel) {
+          sunglassesModel.position.set(
+            settings_glasses.offsetX,
+            settings_glasses.offsetY,
+            settings_glasses.offsetZ
+          );
+          sunglassesModel.rotation.y = settings_glasses.manualRotationY;
+        }
+        
+      } finally {
+        releaseMatrix4(tmpMatrix);
+        releaseVector3(tmpPos);
+        releaseQuaternion(tmpQuat);
+        releaseVector3(tmpScale);
       }
     }
 
@@ -507,7 +727,15 @@ async function __RAF () {
     console.error('Error detecting face landmarks:', error)
   }
 
+  // Always render (this should be fast)
   render()
+
+  // Periodic memory cleanup
+  const now = performance.now();
+  if (now - lastMemoryCleanup > 30000) { // Every 30 seconds
+    cleanupMemory();
+    lastMemoryCleanup = now;
+  }
 
   if (is_running) {
     requestAnimationFrame(__RAF)
@@ -522,6 +750,9 @@ function STOP_RAF () {
   stop_web_camera()
   is_running = false
   results = null
+  
+  // === MEMORY: Cleanup on stop ===
+  cleanupMemory()
 }
 
 function render () {
