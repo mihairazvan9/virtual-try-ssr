@@ -90,16 +90,15 @@ function getModelWidth(obj) {
 function createDetectionCanvas() {
   if (detectionCanvas) return detectionCanvas;
   
-  // Create a smaller canvas for face detection using settings
+  // Use consistent resolution across all devices
   const scaleFactor = settings_glasses.detectionResolutionScale || 0.5;
+  
   detectionCanvas = document.createElement('canvas');
   detectionCtx = detectionCanvas.getContext('2d');
   
   // Set smaller dimensions for detection
   detectionCanvas.width = Math.floor((video?.videoWidth || 400) * scaleFactor);
   detectionCanvas.height = Math.floor((video?.videoHeight || 650) * scaleFactor);
-  
-  // Detection canvas created with optimized resolution
   
   return detectionCanvas;
 }
@@ -271,15 +270,7 @@ function isMobile() {
   return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 }
 
-function applyMobileOptimizations() {
-  if (!settings_glasses.enableMobileOptimizations || !isMobile()) return;
-  
-  // Apply mobile-specific settings
-  settings_glasses.detectionFrameSkip = 2; // Detect every 2nd frame
-  settings_glasses.detectionResolutionScale = 0.6; // 60% resolution
-  settings_glasses.mobileResolutionScale = 0.75; // 75% resolution
-  settings_glasses.mobileFrameRate = 24; // 24fps
-}
+
 
 // Indices for key points (MediaPipe FaceMesh canonical)
 const IDX_RIGHT_OUTER = 33;   // right eye outer
@@ -317,8 +308,6 @@ async function init(canvas_id) {
   // scene.background = hdr
   scene.environment = hdr
   
-  // === MOBILE: Apply mobile optimizations on initialization ===
-  applyMobileOptimizations();
   
   await add_model()
   

@@ -36,7 +36,7 @@
 </template>
 
 <script setup>
-import { useSubscriptionStore } from '../stores/subscription.js'
+import { useSubscriptionStore } from '@/stores/subscription.js'
 
 // Pinia store
 const subscriptionStore = useSubscriptionStore()
