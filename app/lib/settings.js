@@ -10,7 +10,7 @@ const SMOOTHING = {
 
 // Settings
 let settings_glasses = {
-  show: true,
+  show: false,
   mobileMultiplier: 1, // Increased for better mobile scaling
   baseScaleMultiplier: 1, // Increased for better mobile scaling
   manualRotationY: 3.14,
@@ -26,24 +26,15 @@ let settings_glasses = {
   // === NEW: Improved IPD-based scaling settings ===
   frameToIpdRatio: 1.6, // How many "IPDs" wide the frame should appear (1.8-2.2 typical)
   // === PERFORMANCE: Detection optimization settings ===
-  detectionFrameSkip: 2, // Detect every Nth frame (2 = 30fps detection on 60fps display)
   detectionResolutionScale: 0.5, // Scale factor for detection canvas (0.5 = 50% resolution)
-  adaptiveDetection: true, // Enable adaptive detection based on head movement
-  headMovementThreshold: 0.01, // Threshold for significant head movement
   // === MEMORY: Memory optimization settings ===
-  enableObjectPooling: true, // Enable object pooling to reduce garbage collection
-  memoryCleanupInterval: 30000, // Memory cleanup interval in milliseconds (30 seconds)
   maxModelCacheSize: 10, // Maximum number of models to cache
   // === CAMERA: Camera optimization settings ===
   cameraResolutionScale: 1.0, // Scale factor for camera resolution (0.5 = 50% resolution)
   cameraFrameRate: 30, // Target camera frame rate
-  enableCameraOptimization: true, // Enable camera-specific optimizations
   // === MOBILE: Mobile-specific optimization settings ===
-  mobileOptimizationLevel: 'auto', // 'auto', 'low', 'high', 'desktop'
-  mobileFrameRate: 24, // Target frame rate for mobile devices
   mobileResolutionScale: 0.75, // Resolution scale for mobile devices
   enableMobileOptimizations: true, // Enable mobile-specific optimizations
-  lowEndMobileMode: false, // Force low-end mobile optimizations
   // Fine-tuning for different measurement methods
   smoothing: { ...SMOOTHING }
 }
@@ -72,30 +63,21 @@ function settings () {
   
   // Performance optimization settings
   let performanceFolder = gui.addFolder('Performance Optimization')
-  performanceFolder.add(settings_glasses, 'detectionFrameSkip', 1, 5, 1).name('Detection Frame Skip')
   performanceFolder.add(settings_glasses, 'detectionResolutionScale', 0.25, 1.0, 0.05).name('Detection Resolution Scale')
-  performanceFolder.add(settings_glasses, 'adaptiveDetection').name('Adaptive Detection')
-  performanceFolder.add(settings_glasses, 'headMovementThreshold', 0.001, 0.1, 0.001).name('Head Movement Threshold')
   
   // Memory optimization settings
   let memoryFolder = gui.addFolder('Memory Optimization')
-  memoryFolder.add(settings_glasses, 'enableObjectPooling').name('Enable Object Pooling')
-  memoryFolder.add(settings_glasses, 'memoryCleanupInterval', 10000, 60000, 5000).name('Memory Cleanup Interval (ms)')
   memoryFolder.add(settings_glasses, 'maxModelCacheSize', 5, 20, 1).name('Max Model Cache Size')
   
   // Camera optimization settings
   let cameraFolder = gui.addFolder('Camera Optimization')
-  cameraFolder.add(settings_glasses, 'enableCameraOptimization').name('Enable Camera Optimization')
   cameraFolder.add(settings_glasses, 'cameraResolutionScale', 0.25, 1.0, 0.05).name('Camera Resolution Scale')
   cameraFolder.add(settings_glasses, 'cameraFrameRate', 15, 60, 5).name('Camera Frame Rate')
   
   // Mobile optimization settings
   let mobileFolder = gui.addFolder('Mobile Optimization')
   mobileFolder.add(settings_glasses, 'enableMobileOptimizations').name('Enable Mobile Optimizations')
-  mobileFolder.add(settings_glasses, 'mobileOptimizationLevel', ['auto', 'low', 'high', 'desktop']).name('Mobile Optimization Level')
-  mobileFolder.add(settings_glasses, 'mobileFrameRate', 15, 30, 5).name('Mobile Frame Rate')
   mobileFolder.add(settings_glasses, 'mobileResolutionScale', 0.25, 1.0, 0.05).name('Mobile Resolution Scale')
-  mobileFolder.add(settings_glasses, 'lowEndMobileMode').name('Force Low-End Mobile Mode')
   
   sunglassesFolder.open()
   smoothingFolder.open()

@@ -25,9 +25,6 @@ let pendingDetection = null
 let lastDetectionTimestamp = 0
 
 // Performance optimization variables
-let lastDetectionTime = 0
-let lastHeadPosition = new THREE.Vector3()
-let lastHeadRotation = new THREE.Quaternion()
 let detectionCanvas = null
 let detectionCtx = null
 let isDetectionRunning = false
@@ -106,84 +103,6 @@ function createDetectionCanvas() {
   
   return detectionCanvas;
 }
-
-// === PERFORMANCE: Check if head movement is significant enough for new detection ===
-function shouldDetectFace(currentTime) {
-  // Always detect on first frame
-  if (lastDetectionTime === 0) return true;
-  
-  // Get settings
-  const detectionFrameSkip = settings_glasses.detectionFrameSkip || 2;
-  const detectionInterval = 1000 / (60 / detectionFrameSkip); // e.g., 30fps for skip=2
-  const adaptiveDetection = settings_glasses.adaptiveDetection !== false;
-  const headMovementThreshold = settings_glasses.headMovementThreshold || 0.01;
-  
-  // Check time-based detection interval
-  if (currentTime - lastDetectionTime < detectionInterval) return false;
-  
-  // If adaptive detection is disabled, use simple frame skipping
-  if (!adaptiveDetection) {
-    return true;
-  }
-  
-  // Check if head has moved significantly (if we have previous results)
-  const currentResults = getSynchronizedDetection();
-  if (currentResults && currentResults.facialTransformationMatrixes && currentResults.facialTransformationMatrixes.length) {
-    const tmpMatrix = getPooledMatrix4();
-    const tmpPos = getPooledVector3();
-    const tmpQuat = getPooledQuaternion();
-    const tmpScale = getPooledVector3();
-    
-    try {
-      const m = currentResults.facialTransformationMatrixes[0].data;
-      tmpMatrix.fromArray(m);
-      tmpMatrix.decompose(tmpPos, tmpQuat, tmpScale);
-      
-      // Calculate movement distance
-      const positionDelta = lastHeadPosition.distanceTo(tmpPos);
-      const rotationDelta = lastHeadRotation.angleTo(tmpQuat);
-      
-      // Only detect if significant movement or enough time has passed
-      const significantMovement = positionDelta > headMovementThreshold || rotationDelta > 0.1;
-      const enoughTimePassed = currentTime - lastDetectionTime > detectionInterval * 2;
-      
-      return significantMovement || enoughTimePassed;
-    } finally {
-      releaseMatrix4(tmpMatrix);
-      releaseVector3(tmpPos);
-      releaseQuaternion(tmpQuat);
-      releaseVector3(tmpScale);
-    }
-  }
-  
-  return true; // Default to detecting if no previous data
-}
-
-// === PERFORMANCE: Update head tracking data for movement detection ===
-function updateHeadTrackingData(detectionResults) {
-  if (detectionResults && detectionResults.facialTransformationMatrixes && detectionResults.facialTransformationMatrixes.length) {
-    const tmpMatrix = getPooledMatrix4();
-    const tmpPos = getPooledVector3();
-    const tmpQuat = getPooledQuaternion();
-    const tmpScale = getPooledVector3();
-    
-    try {
-      const m = detectionResults.facialTransformationMatrixes[0].data;
-      tmpMatrix.fromArray(m);
-      tmpMatrix.decompose(tmpPos, tmpQuat, tmpScale);
-      
-      lastHeadPosition.copy(tmpPos);
-      lastHeadRotation.copy(tmpQuat);
-    } finally {
-      releaseMatrix4(tmpMatrix);
-      releaseVector3(tmpPos);
-      releaseQuaternion(tmpQuat);
-      releaseVector3(tmpScale);
-    }
-  }
-}
-
-
 
 
 // === PERFORMANCE: Non-blocking face detection with frame sync ===
@@ -663,10 +582,8 @@ async function __RAF () {
       ctx.drawImage(video, 0, 0, canvas_video.width, canvas_video.height)
       ctx.restore()
 
-      // === PERFORMANCE: Only run face detection when needed ===
-      const shouldDetect = shouldDetectFace(current_time)
-      
-      if (shouldDetect && face_landmarker && !isDetectionRunning) {
+      // === PERFORMANCE: Run face detection on every frame for maximum visual impact ===
+      if (face_landmarker && !isDetectionRunning) {
         // Use lower resolution canvas for detection
         const detectionCanvas = createDetectionCanvas()
         
@@ -687,11 +604,6 @@ async function __RAF () {
 
     // === FRAME SYNC: Get synchronized detection results ===
     const synchronizedResults = getSynchronizedDetection();
-    
-    // Update head tracking data for movement detection
-    if (synchronizedResults) {
-      updateHeadTrackingData(synchronizedResults);
-    }
     
     // === PERFORMANCE: Only process results if we have them and anchor exists ===
     if (synchronizedResults && synchronizedResults.facialTransformationMatrixes && synchronizedResults.facialTransformationMatrixes.length && anchor) {
