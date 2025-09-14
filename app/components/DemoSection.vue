@@ -73,7 +73,7 @@
                 <div class="preview-face">
                   <canvas id="preview-3D"></canvas>
                 </div>
-                <SelectGlasses />
+                <!-- <SelectGlasses /> -->
 
               </div>
             </div>

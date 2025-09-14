@@ -5,7 +5,7 @@ import GUI from 'lil-gui'
 const SMOOTHING = { 
   pos: 0.8, 
   rot: 0.8, 
-  scale: 0.35, 
+  scale: 0.5, 
 }; // [0..1], higher = snappier
 
 // Settings
